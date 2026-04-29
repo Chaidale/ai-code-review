@@ -47,5 +47,9 @@ export const GITHUB_TIMEOUT_MS = parsePositiveInteger(process.env.GITHUB_TIMEOUT
 export const MAX_PR_FILES = parsePositiveInteger(process.env.MAX_PR_FILES, 8, "MAX_PR_FILES");
 export const MAX_TOTAL_DIFF_CHARS = parsePositiveInteger(process.env.MAX_TOTAL_DIFF_CHARS, 80_000, "MAX_TOTAL_DIFF_CHARS");
 export const MAX_FILE_DIFF_CHARS = parsePositiveInteger(process.env.MAX_FILE_DIFF_CHARS, 12_000, "MAX_FILE_DIFF_CHARS");
-export const MAX_CROSS_FILE_DIFF_CHARS = parsePositiveInteger(process.env.MAX_CROSS_FILE_DIFF_CHARS, 2_500, "MAX_CROSS_FILE_DIFF_CHARS");
+export const MAX_CROSS_FILE_DIFF_CHARS = parsePositiveInteger(
+  process.env.MAX_CROSS_FILE_DIFF_CHARS ?? process.env.CROSS_FILE_DIFF_CHARS,
+  2_500,
+  "MAX_CROSS_FILE_DIFF_CHARS",
+);
 export const REVIEW_CONCURRENCY = parsePositiveInteger(process.env.REVIEW_CONCURRENCY, 3, "REVIEW_CONCURRENCY");

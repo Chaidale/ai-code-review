@@ -51,7 +51,8 @@
 
           <el-button
             type="primary"
-            :loading="loading"
+            :loading="codeLoading"
+            :disabled="prReviewLoading || prCommentLoading"
             style="margin-top: 16px"
             @click="reviewCode"
           >
@@ -69,7 +70,8 @@
           <div class="pr-actions">
             <el-button
               type="primary"
-              :loading="loading"
+              :loading="prReviewLoading"
+              :disabled="codeLoading || prCommentLoading"
               style="margin-top: 16px"
               @click="reviewPR"
             >
@@ -77,7 +79,8 @@
             </el-button>
 
             <el-button
-              :loading="loading"
+              :loading="prCommentLoading"
+              :disabled="codeLoading || prReviewLoading"
               style="margin-top: 16px"
               @click="reviewPRAndComment"
             >
@@ -114,7 +117,9 @@ const framework = ref("Vue");
 const code = ref("");
 const prUrl = ref("");
 const result = ref("");
-const loading = ref(false);
+const codeLoading = ref(false);
+const prReviewLoading = ref(false);
+const prCommentLoading = ref(false);
 const deepseekApiKey = ref("");
 const githubToken = ref("");
 
@@ -139,7 +144,7 @@ const reviewCode = async () => {
     return;
   }
 
-  loading.value = true;
+  codeLoading.value = true;
   result.value = "";
 
   try {
@@ -156,7 +161,7 @@ const reviewCode = async () => {
       err.response?.data?.message ||
       "Review 失败，请检查后端服务、DeepSeek Key 或网络。";
   } finally {
-    loading.value = false;
+    codeLoading.value = false;
   }
 };
 
@@ -183,7 +188,12 @@ const submitPullRequestReview = async (publishReviewComment = false) => {
     return;
   }
 
-  loading.value = true;
+  if (publishReviewComment) {
+    prCommentLoading.value = true;
+  } else {
+    prReviewLoading.value = true;
+  }
+
   result.value = "";
 
   try {
@@ -198,6 +208,8 @@ const submitPullRequestReview = async (publishReviewComment = false) => {
 
     if (publishReviewComment && res.data.githubReviewPublished) {
       ElMessage.success("AI 评论已发布到 GitHub PR");
+    } else if (publishReviewComment && res.data.githubReviewPublishError) {
+      ElMessage.warning("分析完成，但发布 GitHub 评论失败");
     }
   } catch (err) {
     result.value =
@@ -205,7 +217,11 @@ const submitPullRequestReview = async (publishReviewComment = false) => {
       err.response?.data?.message ||
       "PR Review 失败，请检查 PR 链接、GitHub 权限或后端服务。";
   } finally {
-    loading.value = false;
+    if (publishReviewComment) {
+      prCommentLoading.value = false;
+    } else {
+      prReviewLoading.value = false;
+    }
   }
 };
 

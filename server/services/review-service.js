@@ -10,7 +10,7 @@ import { mapWithConcurrency } from "../lib/async.js";
 import {
   fetchPullRequestDiff,
   parseGitHubPrUrl,
-  publishPullRequestReview,
+  publishPullRequestComment,
   splitDiffByFile,
 } from "../lib/diff.js";
 import { createHttpError } from "../lib/errors.js";
@@ -23,6 +23,18 @@ import {
 
 function normalizeTrimmedString(value) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeBoolean(value) {
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    return value.trim().toLowerCase() === "true";
+  }
+
+  return false;
 }
 
 async function reviewSinglePullRequestFile(file, credentials) {
@@ -73,6 +85,7 @@ function buildPullRequestResult({
   crossFileReviewFailed,
   githubReviewComment,
   githubReviewPublished,
+  githubReviewPublishError,
 }) {
   const failedFileReviewCount = fileReviews.filter((item) => item.reviewFailed).length;
   const sections = [
@@ -104,6 +117,10 @@ function buildPullRequestResult({
     sections.push("> AI 评论已成功发布到 GitHub PR。", "");
   }
 
+  if (githubReviewPublishError) {
+    sections.push(`> GitHub PR 评论发布失败：${githubReviewPublishError}`, "");
+  }
+
   sections.push("---", "");
 
   if (crossFileReview) {
@@ -130,6 +147,7 @@ function buildPullRequestResult({
     crossFileReviewIncluded: Boolean(crossFileReview),
     githubReviewPublished,
     githubReviewComment,
+    githubReviewPublishError,
   };
 }
 
@@ -164,6 +182,7 @@ export async function reviewPullRequest({
   const normalizedPrUrl = normalizeTrimmedString(prUrl);
   const normalizedDeepseekApiKey = normalizeTrimmedString(deepseekApiKey);
   const normalizedGithubToken = normalizeTrimmedString(githubToken);
+  const shouldPublishReviewComment = normalizeBoolean(publishReviewComment);
 
   if (!normalizedPrUrl) {
     throw createHttpError(400, "PR 链接不能为空", { exposeError: false });
@@ -173,7 +192,7 @@ export async function reviewPullRequest({
     throw createHttpError(400, "DEEPSEEK_API_KEY 不能为空", { exposeError: false });
   }
 
-  if (publishReviewComment && !normalizedGithubToken) {
+  if (shouldPublishReviewComment && !normalizedGithubToken) {
     throw createHttpError(400, "发布 GitHub PR 评论时必须提供 GITHUB_TOKEN", {
       exposeError: false,
     });
@@ -228,6 +247,7 @@ export async function reviewPullRequest({
   let crossFileReviewFailed = false;
   let githubReviewComment = null;
   let githubReviewPublished = false;
+  let githubReviewPublishError = null;
 
   if (successfulFileReviews.length === 1) {
     crossFileReview = `## 跨文件总评
@@ -247,7 +267,7 @@ export async function reviewPullRequest({
     }
   }
 
-  if (publishReviewComment) {
+  if (shouldPublishReviewComment) {
     githubReviewComment = await askAI(buildGitHubReviewCommentPrompt({
       owner: prInfo.owner,
       repo: prInfo.repo,
@@ -256,15 +276,20 @@ export async function reviewPullRequest({
       fileReviews: successfulFileReviews,
     }), aiCredentials);
 
-    await publishPullRequestReview({
-      owner: prInfo.owner,
-      repo: prInfo.repo,
-      prNumber: prInfo.prNumber,
-      githubToken: normalizedGithubToken,
-      body: githubReviewComment,
-    });
+    try {
+      await publishPullRequestComment({
+        owner: prInfo.owner,
+        repo: prInfo.repo,
+        prNumber: prInfo.prNumber,
+        githubToken: normalizedGithubToken,
+        body: githubReviewComment,
+      });
 
-    githubReviewPublished = true;
+      githubReviewPublished = true;
+    } catch (error) {
+      githubReviewPublishError = error.message || "未知错误";
+      console.error("GitHub PR 评论发布失败：", error);
+    }
   }
 
   return buildPullRequestResult({
@@ -278,5 +303,6 @@ export async function reviewPullRequest({
     crossFileReviewFailed,
     githubReviewComment,
     githubReviewPublished,
+    githubReviewPublishError,
   });
 }

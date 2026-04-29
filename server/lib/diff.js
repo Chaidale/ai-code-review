@@ -177,7 +177,7 @@ export async function fetchPullRequestDiff({ owner, repo, prNumber }, options = 
   return diff;
 }
 
-export async function publishPullRequestReview({
+export async function publishPullRequestComment({
   owner,
   repo,
   prNumber,
@@ -199,7 +199,7 @@ export async function publishPullRequestReview({
     });
   }
 
-  const reviewUrl = `https://api.github.com/repos/${owner}/${repo}/pulls/${prNumber}/reviews`;
+  const commentUrl = `https://api.github.com/repos/${owner}/${repo}/issues/${prNumber}/comments`;
   const headers = {
     Accept: "application/vnd.github+json",
     Authorization: `Bearer ${normalizedGithubToken}`,
@@ -211,12 +211,11 @@ export async function publishPullRequestReview({
   let reviewRes;
 
   try {
-    reviewRes = await fetch(reviewUrl, {
+    reviewRes = await fetch(commentUrl, {
       method: "POST",
       headers,
       body: JSON.stringify({
         body: normalizedBody,
-        event: "COMMENT",
       }),
       signal: AbortSignal.timeout(GITHUB_TIMEOUT_MS),
     });
@@ -250,9 +249,8 @@ export async function publishPullRequestReview({
   }
 
   return {
-    reviewId: responseJson?.id,
-    state: responseJson?.state,
-    submittedAt: responseJson?.submitted_at,
+    commentId: responseJson?.id,
+    createdAt: responseJson?.created_at,
     htmlUrl: responseJson?.html_url,
   };
 }
