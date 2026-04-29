@@ -148,7 +148,7 @@ const reviewCode = async () => {
   result.value = "";
 
   try {
-    const res = await axios.post("http://localhost:3001/api/review", {
+    const res = await axios.post("/api/review", {
       code: code.value,
       framework: framework.value,
       deepseekApiKey: deepseekApiKey.value.trim(),
@@ -197,7 +197,7 @@ const submitPullRequestReview = async (publishReviewComment = false) => {
   result.value = "";
 
   try {
-    const res = await axios.post("http://localhost:3001/api/review-pr", {
+    const res = await axios.post("/api/review-pr", {
       prUrl: prUrl.value,
       deepseekApiKey: deepseekApiKey.value.trim(),
       githubToken: githubToken.value.trim(),

@@ -4,17 +4,20 @@ function wrapCodeBlock(language, content) {
 
 export function buildCodeReviewPrompt({ framework, code }) {
   return `
-你是一名资深前端架构师，请对下面 ${framework} 代码进行 Code Review。
+你是一名资深工程师，请快速审查下面 ${framework} 代码。
 
-请从以下角度分析：
-1. 代码规范
-2. 潜在 Bug
-3. 性能问题
-4. 可维护性
-5. 前端最佳实践
-6. 可优化建议
+只保留最重要、最值得立即修改的问题。
 
-请使用 Markdown 输出。
+请使用简洁 Markdown 输出，并严格按以下结构：
+## 结论
+## 关键问题
+## 修改建议
+
+要求：
+- 最多列出 3 个问题
+- 如果没有明显问题，明确写“未发现明显问题”
+- 重点关注 Bug、性能和可维护性
+- 控制篇幅，不要展开成长文
 
 代码如下：
 
@@ -101,17 +104,52 @@ ${contextBlocks}
 `;
 }
 
+export function buildPullRequestReviewPrompt({
+  owner,
+  repo,
+  prNumber,
+  files,
+}) {
+  const fileBlocks = files
+    .map(({ fileName, diff }) => `## ${fileName}\n\n${wrapCodeBlock("diff", diff)}`)
+    .join("\n\n");
+
+  return `
+你正在审查一个 GitHub Pull Request，请基于多个文件的 diff 直接给出一份完整、简洁、可执行的 PR Review。
+
+PR：${owner}/${repo}#${prNumber}
+
+请重点关注：
+1. 这次 PR 的整体改动目的
+2. 可能引入的关键 Bug 或回归风险
+3. 跨文件联动问题
+4. 重要的性能和可维护性问题
+5. 合并前最值得验证的场景
+
+请使用 Markdown 输出，并严格按以下结构：
+## 总体结论
+## 高风险问题
+## 重点文件观察
+## 合并前建议
+
+要求：
+- 如果没有明确阻塞问题，也要清楚说明
+- 结论尽量具体，避免空泛表述
+- 优先指出最影响真实运行结果的问题
+- 控制篇幅，适合直接在产品界面中阅读
+
+以下是本次 PR 的 diff：
+
+${fileBlocks}
+`;
+}
+
 export function buildGitHubReviewCommentPrompt({
   owner,
   repo,
   prNumber,
-  crossFileReview,
-  fileReviews,
+  reviewResult,
 }) {
-  const fileSummary = fileReviews
-    .map(({ fileName, review }) => `### ${fileName}\n${review}`)
-    .join("\n\n");
-
   return `
 你要把 AI Code Review 结果整理成一条适合直接发布到 GitHub Pull Request 的 review 评论。
 
@@ -131,8 +169,6 @@ PR：${owner}/${repo}#${prNumber}
 
 以下是已有分析结果：
 
-${crossFileReview || "未生成跨文件总评。"}
-
-${fileSummary}
+${reviewResult}
 `;
 }
