@@ -176,3 +176,81 @@ export async function fetchPullRequestDiff({ owner, repo, prNumber }, options = 
 
   return diff;
 }
+
+export async function publishPullRequestComment({
+  owner,
+  repo,
+  prNumber,
+  githubToken,
+  body,
+}) {
+  const normalizedGithubToken = typeof githubToken === "string" ? githubToken.trim() : "";
+  const normalizedBody = typeof body === "string" ? body.trim() : "";
+
+  if (!normalizedGithubToken) {
+    throw createHttpError(400, "发布 GitHub PR 评论时必须提供 GITHUB_TOKEN", {
+      exposeError: false,
+    });
+  }
+
+  if (!normalizedBody) {
+    throw createHttpError(400, "GitHub PR 评论内容不能为空", {
+      exposeError: false,
+    });
+  }
+
+  const commentUrl = `https://api.github.com/repos/${owner}/${repo}/issues/${prNumber}/comments`;
+  const headers = {
+    Accept: "application/vnd.github+json",
+    Authorization: `Bearer ${normalizedGithubToken}`,
+    "User-Agent": "ai-code-review",
+    "X-GitHub-Api-Version": "2022-11-28",
+    "Content-Type": "application/json",
+  };
+
+  let reviewRes;
+
+  try {
+    reviewRes = await fetch(commentUrl, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        body: normalizedBody,
+      }),
+      signal: AbortSignal.timeout(GITHUB_TIMEOUT_MS),
+    });
+  } catch (error) {
+    if (error?.name === "TimeoutError" || error?.name === "AbortError") {
+      throw createHttpError(504, "发布 GitHub PR 评论超时", { cause: error });
+    }
+
+    throw createHttpError(502, "连接 GitHub 失败，无法发布 PR 评论", { cause: error });
+  }
+
+  const responseText = await reviewRes.text();
+  let responseJson = null;
+
+  if (responseText) {
+    try {
+      responseJson = JSON.parse(responseText);
+    } catch {
+      responseJson = null;
+    }
+  }
+
+  if (!reviewRes.ok) {
+    throw createHttpError(reviewRes.status, "发布 GitHub PR 评论失败", {
+      details: {
+        status: reviewRes.status,
+        githubMessage: responseJson?.message || undefined,
+      },
+      exposeError: false,
+    });
+  }
+
+  return {
+    commentId: responseJson?.id,
+    createdAt: responseJson?.created_at,
+    htmlUrl: responseJson?.html_url,
+  };
+}

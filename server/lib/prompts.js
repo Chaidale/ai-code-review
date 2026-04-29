@@ -2,19 +2,28 @@ function wrapCodeBlock(language, content) {
   return `\`\`\`${language}\n${content}\n\`\`\``;
 }
 
+function wrapTextBlock(title, content) {
+  const normalizedContent = typeof content === "string" ? content.trim() : "";
+
+  return `### ${title}\n\n${wrapCodeBlock("text", normalizedContent || "未提供")}`;
+}
+
 export function buildCodeReviewPrompt({ framework, code }) {
   return `
-你是一名资深前端架构师，请对下面 ${framework} 代码进行 Code Review。
+你是一名资深工程师，请快速审查下面 ${framework} 代码。
 
-请从以下角度分析：
-1. 代码规范
-2. 潜在 Bug
-3. 性能问题
-4. 可维护性
-5. 前端最佳实践
-6. 可优化建议
+只保留最重要、最值得立即修改的问题。
 
-请使用 Markdown 输出。
+请使用简洁 Markdown 输出，并严格按以下结构：
+## 结论
+## 关键问题
+## 修改建议
+
+要求：
+- 最多列出 3 个问题
+- 如果没有明显问题，明确写“未发现明显问题”
+- 重点关注 Bug、性能和可维护性
+- 控制篇幅，不要展开成长文
 
 代码如下：
 
@@ -98,5 +107,126 @@ PR：${owner}/${repo}#${prNumber}
 以下是本次 PR 的多文件上下文：
 
 ${contextBlocks}
+`;
+}
+
+export function buildPullRequestReviewPrompt({
+  owner,
+  repo,
+  prNumber,
+  files,
+}) {
+  const fileBlocks = files
+    .map(({ fileName, diff }) => `## ${fileName}\n\n${wrapCodeBlock("diff", diff)}`)
+    .join("\n\n");
+
+  return `
+你正在审查一个 GitHub Pull Request，请基于多个文件的 diff 直接给出一份完整、简洁、可执行的 PR Review。
+
+PR：${owner}/${repo}#${prNumber}
+
+请重点关注：
+1. 这次 PR 的整体改动目的
+2. 可能引入的关键 Bug 或回归风险
+3. 跨文件联动问题
+4. 重要的性能和可维护性问题
+5. 合并前最值得验证的场景
+
+请使用 Markdown 输出，并严格按以下结构：
+## 总体结论
+## 高风险问题
+## 重点文件观察
+## 合并前建议
+
+要求：
+- 如果没有明确阻塞问题，也要清楚说明
+- 结论尽量具体，避免空泛表述
+- 优先指出最影响真实运行结果的问题
+- 控制篇幅，适合直接在产品界面中阅读
+
+以下是本次 PR 的 diff：
+
+${fileBlocks}
+`;
+}
+
+export function buildPullRequestMonitoringPrompt({
+  owner,
+  repo,
+  prNumber,
+  files,
+  sentryIssueSummary,
+  performanceSummary,
+}) {
+  const fileBlocks = files
+    .map(({ fileName, diff }) => `## ${fileName}\n\n${wrapCodeBlock("diff", diff)}`)
+    .join("\n\n");
+
+  return `
+你是一名资深工程师，正在做一次“PR 变更与线上问题/性能波动”的关联分析。
+
+PR：${owner}/${repo}#${prNumber}
+
+你的目标：
+1. 先概括这次 PR 改了什么
+2. 判断这次改动是否可能引发提供的错误
+3. 判断这次改动是否可能影响提供的性能指标
+4. 给出整体风险等级
+5. 给出是否建议合并
+
+请严格按以下 Markdown 结构输出：
+## PR 改了什么
+## 是否可能引发该错误
+## 是否可能影响性能
+## 风险等级
+## 是否建议合并
+
+要求：
+- 只基于提供的 diff、错误摘要、性能摘要判断，不要编造未提供的上下文
+- “是否可能引发该错误”和“是否可能影响性能”两节开头先明确给出判断：高可能 / 中等可能 / 低可能 / 信息不足
+- “风险等级”先明确写出：高 / 中 / 低，然后说明原因
+- “是否建议合并”先明确写出：不建议合并 / 建议补充验证后再合并 / 可以合并，然后说明原因
+- 如果错误摘要或性能摘要未提供，要明确说明判断受限
+- 重点指出最相关的文件、改动点和需要验证的场景
+- 控制篇幅，适合直接在产品界面中阅读
+
+以下是监控上下文：
+
+${wrapTextBlock("Sentry Issue / 错误摘要", sentryIssueSummary)}
+
+${wrapTextBlock("性能指标摘要", performanceSummary)}
+
+以下是本次 PR 的 diff：
+
+${fileBlocks}
+`;
+}
+
+export function buildGitHubReviewCommentPrompt({
+  owner,
+  repo,
+  prNumber,
+  reviewResult,
+}) {
+  return `
+你要把 AI Code Review 结果整理成一条适合直接发布到 GitHub Pull Request 的 review 评论。
+
+PR：${owner}/${repo}#${prNumber}
+
+请输出一条简洁、专业、可执行的 Markdown 评论，要求：
+1. 适合直接发在 GitHub PR 下
+2. 不要重复过多细节，不要过长
+3. 优先给出总体判断、最重要的风险、合并前建议
+4. 如果没有明显阻塞问题，要明确说明
+5. 不要输出代码块
+
+请严格按以下结构输出：
+## 总体结论
+## 主要问题
+## 合并前建议
+
+以下是已有分析结果：
+
+${reviewResult}
 `;
 }

@@ -40,12 +40,30 @@ function parseNonEmptyString(value, fallback, name) {
 }
 
 export const PORT = parsePositiveInteger(process.env.PORT, 3001, "PORT");
-export const AI_MODEL = parseNonEmptyString(process.env.DEEPSEEK_MODEL, "deepseek-v4-pro", "DEEPSEEK_MODEL");
-export const AI_TIMEOUT_MS = parsePositiveInteger(process.env.AI_TIMEOUT_MS, 60_000, "AI_TIMEOUT_MS");
-export const AI_MAX_TOKENS = parsePositiveInteger(process.env.AI_MAX_TOKENS, 4_096, "AI_MAX_TOKENS");
+export const AI_MODEL = parseNonEmptyString(process.env.DEEPSEEK_MODEL, "deepseek-v4-flash", "DEEPSEEK_MODEL");
+export const AI_TIMEOUT_MS = parsePositiveInteger(process.env.AI_TIMEOUT_MS, 30_000, "AI_TIMEOUT_MS");
+export const AI_MAX_TOKENS = parsePositiveInteger(process.env.AI_MAX_TOKENS, 2_048, "AI_MAX_TOKENS");
+export const CODE_REVIEW_MAX_TOKENS = parsePositiveInteger(process.env.CODE_REVIEW_MAX_TOKENS, 640, "CODE_REVIEW_MAX_TOKENS");
+export const PR_REVIEW_MAX_TOKENS = parsePositiveInteger(process.env.PR_REVIEW_MAX_TOKENS, 1_024, "PR_REVIEW_MAX_TOKENS");
+export const PR_MONITORING_REVIEW_MAX_TOKENS = parsePositiveInteger(
+  process.env.PR_MONITORING_REVIEW_MAX_TOKENS,
+  1_024,
+  "PR_MONITORING_REVIEW_MAX_TOKENS",
+);
+export const GITHUB_COMMENT_MAX_TOKENS = parsePositiveInteger(process.env.GITHUB_COMMENT_MAX_TOKENS, 512, "GITHUB_COMMENT_MAX_TOKENS");
 export const GITHUB_TIMEOUT_MS = parsePositiveInteger(process.env.GITHUB_TIMEOUT_MS, 15_000, "GITHUB_TIMEOUT_MS");
-export const MAX_PR_FILES = parsePositiveInteger(process.env.MAX_PR_FILES, 8, "MAX_PR_FILES");
-export const MAX_TOTAL_DIFF_CHARS = parsePositiveInteger(process.env.MAX_TOTAL_DIFF_CHARS, 80_000, "MAX_TOTAL_DIFF_CHARS");
-export const MAX_FILE_DIFF_CHARS = parsePositiveInteger(process.env.MAX_FILE_DIFF_CHARS, 12_000, "MAX_FILE_DIFF_CHARS");
-export const MAX_CROSS_FILE_DIFF_CHARS = parsePositiveInteger(process.env.MAX_CROSS_FILE_DIFF_CHARS, 2_500, "MAX_CROSS_FILE_DIFF_CHARS");
-export const REVIEW_CONCURRENCY = parsePositiveInteger(process.env.REVIEW_CONCURRENCY, 3, "REVIEW_CONCURRENCY");
+export const MAX_PR_FILES = parsePositiveInteger(process.env.MAX_PR_FILES, 4, "MAX_PR_FILES");
+export const MAX_TOTAL_DIFF_CHARS = parsePositiveInteger(process.env.MAX_TOTAL_DIFF_CHARS, 24_000, "MAX_TOTAL_DIFF_CHARS");
+export const MAX_FILE_DIFF_CHARS = parsePositiveInteger(process.env.MAX_FILE_DIFF_CHARS, 6_000, "MAX_FILE_DIFF_CHARS");
+export const MAX_CODE_REVIEW_CHARS = parsePositiveInteger(process.env.MAX_CODE_REVIEW_CHARS, 8_000, "MAX_CODE_REVIEW_CHARS");
+export const MAX_MONITORING_SUMMARY_CHARS = parsePositiveInteger(
+  process.env.MAX_MONITORING_SUMMARY_CHARS,
+  4_000,
+  "MAX_MONITORING_SUMMARY_CHARS",
+);
+export const MAX_CROSS_FILE_DIFF_CHARS = parsePositiveInteger(
+  process.env.MAX_CROSS_FILE_DIFF_CHARS ?? process.env.CROSS_FILE_DIFF_CHARS,
+  1_500,
+  "MAX_CROSS_FILE_DIFF_CHARS",
+);
+export const REVIEW_CACHE_TTL_MS = parsePositiveInteger(process.env.REVIEW_CACHE_TTL_MS, 300_000, "REVIEW_CACHE_TTL_MS");
