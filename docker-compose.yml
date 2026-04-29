@@ -10,9 +10,7 @@ services:
   client:
     build: ./client
     ports:
-      - "1111:5173"
+      - "1111:80"
     depends_on:
       - server
-    environment:
-      - VITE_API_TARGET=http://server:3001
     restart: unless-stopped
