@@ -1,6 +1,6 @@
 import {
-  CROSS_FILE_DIFF_CHARS,
   MAX_FILE_DIFF_CHARS,
+  MAX_CROSS_FILE_DIFF_CHARS,
   MAX_PR_FILES,
   MAX_TOTAL_DIFF_CHARS,
   REVIEW_CONCURRENCY,
@@ -180,7 +180,7 @@ export async function reviewPullRequest({ prUrl = "", deepseekApiKey = "", githu
     maxFiles: MAX_PR_FILES,
     maxTotalChars: MAX_TOTAL_DIFF_CHARS,
     maxFileChars: MAX_FILE_DIFF_CHARS,
-    contextChars: CROSS_FILE_DIFF_CHARS,
+    contextChars: MAX_CROSS_FILE_DIFF_CHARS,
   });
 
   if (files.length === 0) {

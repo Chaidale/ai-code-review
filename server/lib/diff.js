@@ -8,7 +8,7 @@ export function truncateAtLineBoundary(text, maxChars) {
 
   const candidate = text.slice(0, maxChars);
   const newlineIndex = candidate.lastIndexOf("\n");
-  const truncated = newlineIndex > 0 ? candidate.slice(0, newlineIndex) : candidate;
+  const truncated = newlineIndex >= 0 ? candidate.slice(0, newlineIndex) : candidate;
 
   return `${truncated}\n\n[diff 内容过长，已截断]`;
 }

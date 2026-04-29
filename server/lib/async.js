@@ -16,10 +16,11 @@ export async function mapWithConcurrency(items, concurrency, mapper) {
   const results = new Array(items.length);
   const workerCount = Math.min(Math.max(concurrency, 1), items.length);
   let nextIndex = 0;
+  const END = Symbol("END");
 
   function takeNextIndex() {
     if (nextIndex >= items.length) {
-      return null;
+      return END;
     }
 
     const claimedIndex = nextIndex;
@@ -32,7 +33,7 @@ export async function mapWithConcurrency(items, concurrency, mapper) {
       while (true) {
         const index = takeNextIndex();
 
-        if (index === null) {
+        if (index === END) {
           break;
         }
 
