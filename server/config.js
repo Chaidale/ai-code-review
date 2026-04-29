@@ -42,6 +42,7 @@ function parseNonEmptyString(value, fallback, name) {
 export const PORT = parsePositiveInteger(process.env.PORT, 3001, "PORT");
 export const AI_MODEL = parseNonEmptyString(process.env.DEEPSEEK_MODEL, "deepseek-v4-pro", "DEEPSEEK_MODEL");
 export const AI_TIMEOUT_MS = parsePositiveInteger(process.env.AI_TIMEOUT_MS, 60_000, "AI_TIMEOUT_MS");
+export const AI_MAX_TOKENS = parsePositiveInteger(process.env.AI_MAX_TOKENS, 4_096, "AI_MAX_TOKENS");
 export const GITHUB_TIMEOUT_MS = parsePositiveInteger(process.env.GITHUB_TIMEOUT_MS, 15_000, "GITHUB_TIMEOUT_MS");
 export const MAX_PR_FILES = parsePositiveInteger(process.env.MAX_PR_FILES, 8, "MAX_PR_FILES");
 export const MAX_TOTAL_DIFF_CHARS = parsePositiveInteger(process.env.MAX_TOTAL_DIFF_CHARS, 80_000, "MAX_TOTAL_DIFF_CHARS");

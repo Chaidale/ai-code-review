@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 
-import { AI_MODEL, AI_TIMEOUT_MS } from "../config.js";
+import { AI_MAX_TOKENS, AI_MODEL, AI_TIMEOUT_MS } from "../config.js";
 import { createHttpError, isHttpError } from "./errors.js";
 
 const openaiClients = new Map();
@@ -21,7 +21,7 @@ function getOpenAIClient(apiKey) {
 }
 
 export async function askAI(prompt, options = {}) {
-  const { apiKey, temperature = 0.3 } = options;
+  const { apiKey, temperature = 0.3, thinking = "disabled" } = options;
   let response;
 
   try {
@@ -33,7 +33,13 @@ export async function askAI(prompt, options = {}) {
           content: prompt,
         },
       ],
+      max_tokens: AI_MAX_TOKENS,
       temperature,
+      extra_body: {
+        thinking: {
+          type: thinking,
+        },
+      },
     }, {
       maxRetries: 1,
       timeout: AI_TIMEOUT_MS,
