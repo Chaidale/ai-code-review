@@ -16,6 +16,7 @@
           show-password
           placeholder="请输入 DEEPSEEK_API_KEY"
           clearable
+          autocomplete="off"
         />
 
         <el-input
@@ -24,6 +25,7 @@
           show-password
           placeholder="请输入 GITHUB_TOKEN（选填）"
           clearable
+          autocomplete="off"
           style="margin-top: 12px"
         />
       </div>

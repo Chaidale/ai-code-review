@@ -68,8 +68,12 @@ export function splitDiffByFile(diff, options = {}) {
     maxFiles = Infinity,
     maxTotalChars = Infinity,
     maxFileChars = Infinity,
-    contextChars = maxFileChars,
+    contextChars: customContextChars,
   } = options;
+  const defaultContextChars = Number.isFinite(maxFileChars)
+    ? Math.max(Math.floor(maxFileChars / 2), 1)
+    : Infinity;
+  const contextChars = customContextChars ?? defaultContextChars;
 
   const sections = diff
     .split(/^diff --git /gm)

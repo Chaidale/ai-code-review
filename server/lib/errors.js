@@ -4,7 +4,7 @@ export class HttpError extends Error {
     this.name = "HttpError";
     this.status = status;
     this.details = options.details ?? {};
-    this.exposeError = options.exposeError ?? status >= 500;
+    this.exposeError = options.exposeError ?? status < 500;
 
     if (options.cause) {
       this.cause = options.cause;
@@ -14,6 +14,10 @@ export class HttpError extends Error {
 
 export function createHttpError(status, message, options) {
   return new HttpError(status, message, options);
+}
+
+export function isHttpError(error) {
+  return error instanceof HttpError;
 }
 
 export function toErrorResponse(error) {

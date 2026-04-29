@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 
 import { AI_MODEL, AI_TIMEOUT_MS } from "../config.js";
-import { createHttpError } from "./errors.js";
+import { createHttpError, isHttpError } from "./errors.js";
 
 const openaiClients = new Map();
 
@@ -38,6 +38,10 @@ export async function askAI(prompt, { apiKey } = {}) {
       timeout: AI_TIMEOUT_MS,
     });
   } catch (error) {
+    if (isHttpError(error)) {
+      throw error;
+    }
+
     if (error?.name === "APIConnectionTimeoutError") {
       throw createHttpError(504, "AI 响应超时，请稍后重试", { cause: error });
     }
