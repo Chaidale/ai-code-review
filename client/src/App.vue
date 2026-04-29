@@ -82,10 +82,6 @@ const loading = ref(false);
 
 const htmlResult = computed(() => md.render(result.value));
 
-const test = "hello ai review";
-
-console.log("debug");
-
 const reviewCode = async () => {
   if (!code.value.trim()) {
     ElMessage.warning("请先输入代码");
