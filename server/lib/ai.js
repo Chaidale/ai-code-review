@@ -20,7 +20,8 @@ function getOpenAIClient(apiKey) {
   return openaiClients.get(apiKey);
 }
 
-export async function askAI(prompt, { apiKey } = {}) {
+export async function askAI(prompt, options = {}) {
+  const { apiKey, temperature = 0.3 } = options;
   let response;
 
   try {
@@ -32,7 +33,7 @@ export async function askAI(prompt, { apiKey } = {}) {
           content: prompt,
         },
       ],
-      temperature: 0.3,
+      temperature,
     }, {
       maxRetries: 1,
       timeout: AI_TIMEOUT_MS,
