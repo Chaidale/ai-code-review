@@ -4,6 +4,30 @@
     <p class="desc">支持粘贴代码 Review，也支持 GitHub PR 自动 Review</p>
 
     <el-card>
+      <div class="credentials">
+        <h3>调用凭证</h3>
+        <p class="credentials-desc">
+          <code>DEEPSEEK_API_KEY</code> 为必填，<code>GITHUB_TOKEN</code> 可选，仅在需要更高 GitHub 权限或访问频率时填写。
+        </p>
+
+        <el-input
+          v-model="deepseekApiKey"
+          type="password"
+          show-password
+          placeholder="请输入 DEEPSEEK_API_KEY"
+          clearable
+        />
+
+        <el-input
+          v-model="githubToken"
+          type="password"
+          show-password
+          placeholder="请输入 GITHUB_TOKEN（选填）"
+          clearable
+          style="margin-top: 12px"
+        />
+      </div>
+
       <el-tabs v-model="activeTab">
         <el-tab-pane label="代码 Review" name="code">
           <el-select
@@ -79,12 +103,25 @@ const code = ref("");
 const prUrl = ref("");
 const result = ref("");
 const loading = ref(false);
+const deepseekApiKey = ref("");
+const githubToken = ref("");
 
 const htmlResult = computed(() => md.render(result.value));
 
-console.log('我又修改了')
+const ensureDeepseekApiKey = () => {
+  if (deepseekApiKey.value.trim()) {
+    return true;
+  }
+
+  ElMessage.warning("请先输入 DEEPSEEK_API_KEY");
+  return false;
+};
 
 const reviewCode = async () => {
+  if (!ensureDeepseekApiKey()) {
+    return;
+  }
+
   if (!code.value.trim()) {
     ElMessage.warning("请先输入代码");
     return;
@@ -97,6 +134,7 @@ const reviewCode = async () => {
     const res = await axios.post("http://localhost:3001/api/review", {
       code: code.value,
       framework: framework.value,
+      deepseekApiKey: deepseekApiKey.value.trim(),
     });
 
     result.value = res.data.result;
@@ -111,6 +149,10 @@ const reviewCode = async () => {
 };
 
 const reviewPR = async () => {
+  if (!ensureDeepseekApiKey()) {
+    return;
+  }
+
   if (!prUrl.value.trim()) {
     ElMessage.warning("请先输入 GitHub PR 链接");
     return;
@@ -122,6 +164,8 @@ const reviewPR = async () => {
   try {
     const res = await axios.post("http://localhost:3001/api/review-pr", {
       prUrl: prUrl.value,
+      deepseekApiKey: deepseekApiKey.value.trim(),
+      githubToken: githubToken.value.trim(),
     });
 
     result.value = res.data.result;
@@ -157,6 +201,21 @@ h1 {
   text-align: center;
   color: #666;
   margin-bottom: 24px;
+}
+
+.credentials {
+  margin-bottom: 20px;
+}
+
+.credentials h3 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.credentials-desc {
+  margin: 0 0 12px;
+  color: #666;
+  line-height: 1.6;
 }
 
 .result-header {
