@@ -100,3 +100,39 @@ PR：${owner}/${repo}#${prNumber}
 ${contextBlocks}
 `;
 }
+
+export function buildGitHubReviewCommentPrompt({
+  owner,
+  repo,
+  prNumber,
+  crossFileReview,
+  fileReviews,
+}) {
+  const fileSummary = fileReviews
+    .map(({ fileName, review }) => `### ${fileName}\n${review}`)
+    .join("\n\n");
+
+  return `
+你要把 AI Code Review 结果整理成一条适合直接发布到 GitHub Pull Request 的 review 评论。
+
+PR：${owner}/${repo}#${prNumber}
+
+请输出一条简洁、专业、可执行的 Markdown 评论，要求：
+1. 适合直接发在 GitHub PR 下
+2. 不要重复过多细节，不要过长
+3. 优先给出总体判断、最重要的风险、合并前建议
+4. 如果没有明显阻塞问题，要明确说明
+5. 不要输出代码块
+
+请严格按以下结构输出：
+## 总体结论
+## 主要问题
+## 合并前建议
+
+以下是已有分析结果：
+
+${crossFileReview || "未生成跨文件总评。"}
+
+${fileSummary}
+`;
+}

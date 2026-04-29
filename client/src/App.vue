@@ -66,14 +66,24 @@
             clearable
           />
 
-          <el-button
-            type="primary"
-            :loading="loading"
-            style="margin-top: 16px"
-            @click="reviewPR"
-          >
-            分析 PR
-          </el-button>
+          <div class="pr-actions">
+            <el-button
+              type="primary"
+              :loading="loading"
+              style="margin-top: 16px"
+              @click="reviewPR"
+            >
+              分析 PR
+            </el-button>
+
+            <el-button
+              :loading="loading"
+              style="margin-top: 16px"
+              @click="reviewPRAndComment"
+            >
+              AI 评论到 GitHub
+            </el-button>
+          </div>
         </el-tab-pane>
       </el-tabs>
     </el-card>
@@ -151,12 +161,25 @@ const reviewCode = async () => {
 };
 
 const reviewPR = async () => {
+  await submitPullRequestReview();
+};
+
+const reviewPRAndComment = async () => {
+  await submitPullRequestReview(true);
+};
+
+const submitPullRequestReview = async (publishReviewComment = false) => {
   if (!ensureDeepseekApiKey()) {
     return;
   }
 
   if (!prUrl.value.trim()) {
     ElMessage.warning("请先输入 GitHub PR 链接");
+    return;
+  }
+
+  if (publishReviewComment && !githubToken.value.trim()) {
+    ElMessage.warning("发布 GitHub PR 评论前，请先输入 GITHUB_TOKEN");
     return;
   }
 
@@ -168,9 +191,14 @@ const reviewPR = async () => {
       prUrl: prUrl.value,
       deepseekApiKey: deepseekApiKey.value.trim(),
       githubToken: githubToken.value.trim(),
+      publishReviewComment,
     });
 
     result.value = res.data.result;
+
+    if (publishReviewComment && res.data.githubReviewPublished) {
+      ElMessage.success("AI 评论已发布到 GitHub PR");
+    }
   } catch (err) {
     result.value =
       err.response?.data?.error ||
@@ -218,6 +246,12 @@ h1 {
   margin: 0 0 12px;
   color: #666;
   line-height: 1.6;
+}
+
+.pr-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .result-header {

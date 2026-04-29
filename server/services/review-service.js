@@ -10,6 +10,7 @@ import { mapWithConcurrency } from "../lib/async.js";
 import {
   fetchPullRequestDiff,
   parseGitHubPrUrl,
+  publishPullRequestReview,
   splitDiffByFile,
 } from "../lib/diff.js";
 import { createHttpError } from "../lib/errors.js";
@@ -17,6 +18,7 @@ import {
   buildCodeReviewPrompt,
   buildCrossFileReviewPrompt,
   buildFileReviewPrompt,
+  buildGitHubReviewCommentPrompt,
 } from "../lib/prompts.js";
 
 function normalizeTrimmedString(value) {
@@ -69,6 +71,8 @@ function buildPullRequestResult({
   fileReviews,
   crossFileReview,
   crossFileReviewFailed,
+  githubReviewComment,
+  githubReviewPublished,
 }) {
   const failedFileReviewCount = fileReviews.filter((item) => item.reviewFailed).length;
   const sections = [
@@ -96,6 +100,10 @@ function buildPullRequestResult({
     sections.push(`> 有 ${failedFileReviewCount} 个文件的 AI 单文件分析失败，结果中已标注为人工复核项。`, "");
   }
 
+  if (githubReviewPublished) {
+    sections.push("> AI 评论已成功发布到 GitHub PR。", "");
+  }
+
   sections.push("---", "");
 
   if (crossFileReview) {
@@ -120,6 +128,8 @@ function buildPullRequestResult({
     skippedBinaryFileCount: skippedBinaryFiles,
     failedFileReviewCount,
     crossFileReviewIncluded: Boolean(crossFileReview),
+    githubReviewPublished,
+    githubReviewComment,
   };
 }
 
@@ -145,7 +155,12 @@ export async function reviewCode({ code = "", framework = "Vue", deepseekApiKey 
   return { result };
 }
 
-export async function reviewPullRequest({ prUrl = "", deepseekApiKey = "", githubToken = "" } = {}) {
+export async function reviewPullRequest({
+  prUrl = "",
+  deepseekApiKey = "",
+  githubToken = "",
+  publishReviewComment = false,
+} = {}) {
   const normalizedPrUrl = normalizeTrimmedString(prUrl);
   const normalizedDeepseekApiKey = normalizeTrimmedString(deepseekApiKey);
   const normalizedGithubToken = normalizeTrimmedString(githubToken);
@@ -156,6 +171,12 @@ export async function reviewPullRequest({ prUrl = "", deepseekApiKey = "", githu
 
   if (!normalizedDeepseekApiKey) {
     throw createHttpError(400, "DEEPSEEK_API_KEY 不能为空", { exposeError: false });
+  }
+
+  if (publishReviewComment && !normalizedGithubToken) {
+    throw createHttpError(400, "发布 GitHub PR 评论时必须提供 GITHUB_TOKEN", {
+      exposeError: false,
+    });
   }
 
   const prInfo = parseGitHubPrUrl(normalizedPrUrl);
@@ -205,6 +226,8 @@ export async function reviewPullRequest({ prUrl = "", deepseekApiKey = "", githu
 
   let crossFileReview = null;
   let crossFileReviewFailed = false;
+  let githubReviewComment = null;
+  let githubReviewPublished = false;
 
   if (successfulFileReviews.length === 1) {
     crossFileReview = `## 跨文件总评
@@ -224,6 +247,26 @@ export async function reviewPullRequest({ prUrl = "", deepseekApiKey = "", githu
     }
   }
 
+  if (publishReviewComment) {
+    githubReviewComment = await askAI(buildGitHubReviewCommentPrompt({
+      owner: prInfo.owner,
+      repo: prInfo.repo,
+      prNumber: prInfo.prNumber,
+      crossFileReview,
+      fileReviews: successfulFileReviews,
+    }), aiCredentials);
+
+    await publishPullRequestReview({
+      owner: prInfo.owner,
+      repo: prInfo.repo,
+      prNumber: prInfo.prNumber,
+      githubToken: normalizedGithubToken,
+      body: githubReviewComment,
+    });
+
+    githubReviewPublished = true;
+  }
+
   return buildPullRequestResult({
     prInfo,
     totalFileCount,
@@ -233,5 +276,7 @@ export async function reviewPullRequest({ prUrl = "", deepseekApiKey = "", githu
     fileReviews,
     crossFileReview,
     crossFileReviewFailed,
+    githubReviewComment,
+    githubReviewPublished,
   });
 }
