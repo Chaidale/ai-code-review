@@ -30,6 +30,13 @@ async function askAI(prompt) {
   return response.choices[0].message.content;
 }
 
+function splitDiffByFile(diff) {
+  return diff
+    .split(/^diff --git /gm)
+    .filter(Boolean)
+    .map((item) => `diff --git ${item}`);
+}
+
 app.post("/api/review", async (req, res) => {
   try {
     const { code, framework = "Vue" } = req.body;
@@ -83,9 +90,7 @@ app.post("/api/review-pr", async (req, res) => {
       });
     }
 
-    const match = prUrl.match(
-      /github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/
-    );
+    const match = prUrl.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
 
     if (!match) {
       return res.status(400).json({
@@ -123,35 +128,63 @@ app.post("/api/review-pr", async (req, res) => {
       });
     }
 
-    if (diff.length > 50000) {
-      diff = diff.slice(0, 50000);
+    if (diff.length > 80000) {
+      diff = diff.slice(0, 80000);
     }
 
-    const prompt = `
-你是一名资深前端架构师，请对下面 GitHub PR diff 进行 Code Review。
+    const files = splitDiffByFile(diff);
+
+    let finalResult = `# GitHub PR Code Review 结果\n\n`;
+    finalResult += `本次 PR 共修改 **${files.length}** 个文件。\n\n`;
+
+    const maxFiles = 8;
+
+    for (let i = 0; i < Math.min(files.length, maxFiles); i++) {
+      const fileDiff = files[i];
+
+      const fileNameMatch = fileDiff.match(/\+\+\+ b\/(.+)/);
+      const fileName = fileNameMatch ? fileNameMatch[1] : `第 ${i + 1} 个文件`;
+
+      const prompt = `
+你是一名资深前端架构师，请对下面这个文件的 GitHub diff 做 Code Review。
+
+文件名：${fileName}
 
 请重点关注：
-1. 本次修改的主要内容
+1. 这个文件修改了什么
 2. 是否可能引入 Bug
-3. 性能影响
-4. 可维护性问题
-5. TypeScript / Vue / React / JavaScript 最佳实践
-6. 是否有更好的实现方式
-7. 最终给出 Review 结论：通过 / 建议修改 / 不建议合并
+3. 是否有性能问题
+4. 是否有可维护性问题
+5. 是否符合 Vue / React / TypeScript / JavaScript 最佳实践
+6. 给出具体修改建议
+7. 最后给出该文件风险等级：低 / 中 / 高
 
-请使用 Markdown 输出，并尽量指出具体文件和代码片段。
+请使用 Markdown 输出。
 
-PR diff 如下：
+文件 diff 如下：
 
 \`\`\`diff
-${diff}
+${fileDiff}
 \`\`\`
 `;
 
-    const result = await askAI(prompt);
+      const review = await askAI(prompt);
+
+      finalResult += `---\n\n`;
+      finalResult += `## ${i + 1}. ${fileName}\n\n`;
+      finalResult += review;
+      finalResult += `\n\n`;
+    }
+
+    if (files.length > maxFiles) {
+      finalResult += `---\n\n`;
+      finalResult += `> 注意：本次 PR 修改文件较多，仅分析了前 ${maxFiles} 个文件。\n`;
+    }
 
     res.json({
-      result,
+      result: finalResult,
+      fileCount: files.length,
+      analyzedFileCount: Math.min(files.length, maxFiles),
       diffLength: diff.length,
     });
   } catch (error) {
