@@ -3,7 +3,11 @@ import cors from "cors";
 import { PORT } from "./config.js";
 import { asyncHandler } from "./lib/async.js";
 import { toErrorResponse } from "./lib/errors.js";
-import { reviewCode, reviewPullRequest } from "./services/review-service.js";
+import {
+  reviewCode,
+  reviewPullRequest,
+  reviewPullRequestMonitoring,
+} from "./services/review-service.js";
 
 const app = express();
 
@@ -17,6 +21,11 @@ app.post("/api/review", asyncHandler(async (req, res) => {
 
 app.post("/api/review-pr", asyncHandler(async (req, res) => {
   const result = await reviewPullRequest(req.body ?? {});
+  res.json(result);
+}));
+
+app.post("/api/review-pr-monitoring", asyncHandler(async (req, res) => {
+  const result = await reviewPullRequestMonitoring(req.body ?? {});
   res.json(result);
 }));
 

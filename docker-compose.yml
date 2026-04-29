@@ -10,7 +10,7 @@ services:
   client:
     build: ./client
     ports:
-      - "5173:5173"
+      - "1111:5173"
     depends_on:
       - server
     environment:

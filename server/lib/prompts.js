@@ -2,6 +2,12 @@ function wrapCodeBlock(language, content) {
   return `\`\`\`${language}\n${content}\n\`\`\``;
 }
 
+function wrapTextBlock(title, content) {
+  const normalizedContent = typeof content === "string" ? content.trim() : "";
+
+  return `### ${title}\n\n${wrapCodeBlock("text", normalizedContent || "未提供")}`;
+}
+
 export function buildCodeReviewPrompt({ framework, code }) {
   return `
 你是一名资深工程师，请快速审查下面 ${framework} 代码。
@@ -137,6 +143,58 @@ PR：${owner}/${repo}#${prNumber}
 - 结论尽量具体，避免空泛表述
 - 优先指出最影响真实运行结果的问题
 - 控制篇幅，适合直接在产品界面中阅读
+
+以下是本次 PR 的 diff：
+
+${fileBlocks}
+`;
+}
+
+export function buildPullRequestMonitoringPrompt({
+  owner,
+  repo,
+  prNumber,
+  files,
+  sentryIssueSummary,
+  performanceSummary,
+}) {
+  const fileBlocks = files
+    .map(({ fileName, diff }) => `## ${fileName}\n\n${wrapCodeBlock("diff", diff)}`)
+    .join("\n\n");
+
+  return `
+你是一名资深工程师，正在做一次“PR 变更与线上问题/性能波动”的关联分析。
+
+PR：${owner}/${repo}#${prNumber}
+
+你的目标：
+1. 先概括这次 PR 改了什么
+2. 判断这次改动是否可能引发提供的错误
+3. 判断这次改动是否可能影响提供的性能指标
+4. 给出整体风险等级
+5. 给出是否建议合并
+
+请严格按以下 Markdown 结构输出：
+## PR 改了什么
+## 是否可能引发该错误
+## 是否可能影响性能
+## 风险等级
+## 是否建议合并
+
+要求：
+- 只基于提供的 diff、错误摘要、性能摘要判断，不要编造未提供的上下文
+- “是否可能引发该错误”和“是否可能影响性能”两节开头先明确给出判断：高可能 / 中等可能 / 低可能 / 信息不足
+- “风险等级”先明确写出：高 / 中 / 低，然后说明原因
+- “是否建议合并”先明确写出：不建议合并 / 建议补充验证后再合并 / 可以合并，然后说明原因
+- 如果错误摘要或性能摘要未提供，要明确说明判断受限
+- 重点指出最相关的文件、改动点和需要验证的场景
+- 控制篇幅，适合直接在产品界面中阅读
+
+以下是监控上下文：
+
+${wrapTextBlock("Sentry Issue / 错误摘要", sentryIssueSummary)}
+
+${wrapTextBlock("性能指标摘要", performanceSummary)}
 
 以下是本次 PR 的 diff：
 

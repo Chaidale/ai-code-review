@@ -1,10 +1,12 @@
 import {
   MAX_CODE_REVIEW_CHARS,
+  MAX_MONITORING_SUMMARY_CHARS,
   MAX_FILE_DIFF_CHARS,
   MAX_CROSS_FILE_DIFF_CHARS,
   MAX_PR_FILES,
   MAX_TOTAL_DIFF_CHARS,
   CODE_REVIEW_MAX_TOKENS,
+  PR_MONITORING_REVIEW_MAX_TOKENS,
   PR_REVIEW_MAX_TOKENS,
   GITHUB_COMMENT_MAX_TOKENS,
   REVIEW_CACHE_TTL_MS,
@@ -20,6 +22,7 @@ import { createHttpError } from "../lib/errors.js";
 import {
   buildCodeReviewPrompt,
   buildGitHubReviewCommentPrompt,
+  buildPullRequestMonitoringPrompt,
   buildPullRequestReviewPrompt,
 } from "../lib/prompts.js";
 
@@ -125,6 +128,111 @@ function buildPullRequestResult({
   };
 }
 
+function buildPullRequestMonitoringResult({
+  prInfo,
+  totalFileCount,
+  skippedBinaryFiles,
+  omittedTextFileCount,
+  truncatedFileCount,
+  analyzedFileCount,
+  sentryIssueSummary,
+  performanceSummary,
+  analysisResult,
+}) {
+  const hasSentryIssueSummary = Boolean(sentryIssueSummary);
+  const hasPerformanceSummary = Boolean(performanceSummary);
+  const sections = [
+    "# PR 与监控风险分析结果",
+    "",
+    `PR：**${prInfo.owner}/${prInfo.repo}#${prInfo.prNumber}**`,
+    "",
+    `本次 PR 共修改 **${totalFileCount}** 个文件，本次分析了 **${analyzedFileCount}** 个文本文件。`,
+    "",
+    `错误摘要：**${hasSentryIssueSummary ? "已提供" : "未提供"}**`,
+    "",
+    `性能摘要：**${hasPerformanceSummary ? "已提供" : "未提供"}**`,
+    "",
+  ];
+
+  if (skippedBinaryFiles > 0) {
+    sections.push(`> 已跳过 ${skippedBinaryFiles} 个二进制文件。`, "");
+  }
+
+  if (omittedTextFileCount > 0) {
+    sections.push(`> 还有 ${omittedTextFileCount} 个文本文件未纳入分析，以避免超出当前 diff 长度限制。`, "");
+  }
+
+  if (truncatedFileCount > 0) {
+    sections.push(`> 有 ${truncatedFileCount} 个文件的 diff 已按行截断，结论可能不如完整 diff 准确。`, "");
+  }
+
+  sections.push("---", "");
+  sections.push(analysisResult, "");
+
+  return {
+    result: sections.join("\n"),
+    fileCount: totalFileCount,
+    analyzedFileCount,
+    skippedBinaryFileCount: skippedBinaryFiles,
+    hasSentryIssueSummary,
+    hasPerformanceSummary,
+  };
+}
+
+async function loadPullRequestContext({
+  prUrl = "",
+  deepseekApiKey = "",
+  githubToken = "",
+} = {}) {
+  const normalizedPrUrl = normalizeTrimmedString(prUrl);
+  const normalizedDeepseekApiKey = normalizeTrimmedString(deepseekApiKey);
+  const normalizedGithubToken = normalizeTrimmedString(githubToken);
+
+  if (!normalizedPrUrl) {
+    throw createHttpError(400, "PR 链接不能为空", { exposeError: false });
+  }
+
+  if (!normalizedDeepseekApiKey) {
+    throw createHttpError(400, "DEEPSEEK_API_KEY 不能为空", { exposeError: false });
+  }
+
+  const prInfo = parseGitHubPrUrl(normalizedPrUrl);
+
+  if (!prInfo) {
+    throw createHttpError(400, "PR 链接格式不正确，例如：https://github.com/user/repo/pull/123", {
+      exposeError: false,
+    });
+  }
+
+  const diff = await fetchPullRequestDiff(prInfo, {
+    githubToken: normalizedGithubToken,
+  });
+  const splitResult = splitDiffByFile(diff, {
+    maxFiles: MAX_PR_FILES,
+    maxTotalChars: MAX_TOTAL_DIFF_CHARS,
+    maxFileChars: MAX_FILE_DIFF_CHARS,
+    contextChars: MAX_CROSS_FILE_DIFF_CHARS,
+  });
+
+  if (splitResult.files.length === 0) {
+    throw createHttpError(
+      400,
+      splitResult.skippedBinaryFiles > 0
+        ? "该 PR 只包含二进制文件，暂不支持分析"
+        : "该 PR 没有可分析的文本 diff",
+      { exposeError: false },
+    );
+  }
+
+  return {
+    normalizedPrUrl,
+    normalizedDeepseekApiKey,
+    normalizedGithubToken,
+    prInfo,
+    ...splitResult,
+  };
+}
+
 export async function reviewCode({ code = "", framework = "Vue", deepseekApiKey = "" } = {}) {
   const normalizedCode = normalizeTrimmedString(code);
   const normalizedDeepseekApiKey = normalizeTrimmedString(deepseekApiKey);
@@ -165,57 +273,29 @@ export async function reviewPullRequest({
   githubToken = "",
   publishReviewComment = false,
 } = {}) {
-  const normalizedPrUrl = normalizeTrimmedString(prUrl);
-  const normalizedDeepseekApiKey = normalizeTrimmedString(deepseekApiKey);
-  const normalizedGithubToken = normalizeTrimmedString(githubToken);
   const shouldPublishReviewComment = normalizeBoolean(publishReviewComment);
 
-  if (!normalizedPrUrl) {
-    throw createHttpError(400, "PR 链接不能为空", { exposeError: false });
-  }
-
-  if (!normalizedDeepseekApiKey) {
-    throw createHttpError(400, "DEEPSEEK_API_KEY 不能为空", { exposeError: false });
-  }
-
-  if (shouldPublishReviewComment && !normalizedGithubToken) {
+  if (shouldPublishReviewComment && !normalizeTrimmedString(githubToken)) {
     throw createHttpError(400, "发布 GitHub PR 评论时必须提供 GITHUB_TOKEN", {
       exposeError: false,
     });
   }
 
-  const prInfo = parseGitHubPrUrl(normalizedPrUrl);
-
-  if (!prInfo) {
-    throw createHttpError(400, "PR 链接格式不正确，例如：https://github.com/user/repo/pull/123", {
-      exposeError: false,
-    });
-  }
-
-  const aiCredentials = { apiKey: normalizedDeepseekApiKey };
-  const diff = await fetchPullRequestDiff(prInfo, {
-    githubToken: normalizedGithubToken,
-  });
   const {
+    normalizedDeepseekApiKey,
+    normalizedGithubToken,
+    prInfo,
     files,
     totalFileCount,
     skippedBinaryFiles,
     omittedTextFileCount,
     truncatedFileCount,
-  } = splitDiffByFile(diff, {
-    maxFiles: MAX_PR_FILES,
-    maxTotalChars: MAX_TOTAL_DIFF_CHARS,
-    maxFileChars: MAX_FILE_DIFF_CHARS,
-    contextChars: MAX_CROSS_FILE_DIFF_CHARS,
+  } = await loadPullRequestContext({
+    prUrl,
+    deepseekApiKey,
+    githubToken,
   });
-
-  if (files.length === 0) {
-    throw createHttpError(
-      400,
-      skippedBinaryFiles > 0 ? "该 PR 只包含二进制文件，暂不支持分析" : "该 PR 没有可分析的文本 diff",
-      { exposeError: false },
-    );
-  }
+  const aiCredentials = { apiKey: normalizedDeepseekApiKey };
 
   const reviewCacheKey = JSON.stringify({
     type: "pr-review",
@@ -275,5 +355,76 @@ export async function reviewPullRequest({
     githubReviewComment,
     githubReviewPublished,
     githubReviewPublishError,
+  });
+}
+
+export async function reviewPullRequestMonitoring({
+  prUrl = "",
+  deepseekApiKey = "",
+  githubToken = "",
+  sentryIssueSummary = "",
+  performanceSummary = "",
+} = {}) {
+  const normalizedSentryIssueSummary = normalizeTrimmedString(sentryIssueSummary);
+  const normalizedPerformanceSummary = normalizeTrimmedString(performanceSummary);
+
+  if (!normalizedSentryIssueSummary && !normalizedPerformanceSummary) {
+    throw createHttpError(400, "请至少提供 Sentry Issue / 错误摘要 或 性能指标摘要", {
+      exposeError: false,
+    });
+  }
+
+  const {
+    normalizedDeepseekApiKey,
+    prInfo,
+    files,
+    totalFileCount,
+    skippedBinaryFiles,
+    omittedTextFileCount,
+    truncatedFileCount,
+  } = await loadPullRequestContext({
+    prUrl,
+    deepseekApiKey,
+    githubToken,
+  });
+  const truncatedSentryIssueSummary = truncateText(
+    normalizedSentryIssueSummary,
+    MAX_MONITORING_SUMMARY_CHARS,
+    "[错误摘要过长，已截断]",
+  );
+  const truncatedPerformanceSummary = truncateText(
+    normalizedPerformanceSummary,
+    MAX_MONITORING_SUMMARY_CHARS,
+    "[性能摘要过长，已截断]",
+  );
+  const reviewCacheKey = JSON.stringify({
+    type: "pr-monitoring-review",
+    pr: `${prInfo.owner}/${prInfo.repo}#${prInfo.prNumber}`,
+    files,
+    sentryIssueSummary: truncatedSentryIssueSummary,
+    performanceSummary: truncatedPerformanceSummary,
+  });
+  const analysisResult = await getOrCreateCachedResult(reviewCacheKey, () => askAI(buildPullRequestMonitoringPrompt({
+    owner: prInfo.owner,
+    repo: prInfo.repo,
+    prNumber: prInfo.prNumber,
+    files,
+    sentryIssueSummary: truncatedSentryIssueSummary,
+    performanceSummary: truncatedPerformanceSummary,
+  }), {
+    apiKey: normalizedDeepseekApiKey,
+    maxTokens: PR_MONITORING_REVIEW_MAX_TOKENS,
+  }));
+
+  return buildPullRequestMonitoringResult({
+    prInfo,
+    totalFileCount,
+    skippedBinaryFiles,
+    omittedTextFileCount,
+    truncatedFileCount,
+    analyzedFileCount: files.length,
+    sentryIssueSummary: truncatedSentryIssueSummary,
+    performanceSummary: truncatedPerformanceSummary,
+    analysisResult,
   });
 }

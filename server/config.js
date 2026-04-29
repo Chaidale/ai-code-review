@@ -45,12 +45,22 @@ export const AI_TIMEOUT_MS = parsePositiveInteger(process.env.AI_TIMEOUT_MS, 30_
 export const AI_MAX_TOKENS = parsePositiveInteger(process.env.AI_MAX_TOKENS, 2_048, "AI_MAX_TOKENS");
 export const CODE_REVIEW_MAX_TOKENS = parsePositiveInteger(process.env.CODE_REVIEW_MAX_TOKENS, 640, "CODE_REVIEW_MAX_TOKENS");
 export const PR_REVIEW_MAX_TOKENS = parsePositiveInteger(process.env.PR_REVIEW_MAX_TOKENS, 1_024, "PR_REVIEW_MAX_TOKENS");
+export const PR_MONITORING_REVIEW_MAX_TOKENS = parsePositiveInteger(
+  process.env.PR_MONITORING_REVIEW_MAX_TOKENS,
+  1_024,
+  "PR_MONITORING_REVIEW_MAX_TOKENS",
+);
 export const GITHUB_COMMENT_MAX_TOKENS = parsePositiveInteger(process.env.GITHUB_COMMENT_MAX_TOKENS, 512, "GITHUB_COMMENT_MAX_TOKENS");
 export const GITHUB_TIMEOUT_MS = parsePositiveInteger(process.env.GITHUB_TIMEOUT_MS, 15_000, "GITHUB_TIMEOUT_MS");
 export const MAX_PR_FILES = parsePositiveInteger(process.env.MAX_PR_FILES, 4, "MAX_PR_FILES");
 export const MAX_TOTAL_DIFF_CHARS = parsePositiveInteger(process.env.MAX_TOTAL_DIFF_CHARS, 24_000, "MAX_TOTAL_DIFF_CHARS");
 export const MAX_FILE_DIFF_CHARS = parsePositiveInteger(process.env.MAX_FILE_DIFF_CHARS, 6_000, "MAX_FILE_DIFF_CHARS");
 export const MAX_CODE_REVIEW_CHARS = parsePositiveInteger(process.env.MAX_CODE_REVIEW_CHARS, 8_000, "MAX_CODE_REVIEW_CHARS");
+export const MAX_MONITORING_SUMMARY_CHARS = parsePositiveInteger(
+  process.env.MAX_MONITORING_SUMMARY_CHARS,
+  4_000,
+  "MAX_MONITORING_SUMMARY_CHARS",
+);
 export const MAX_CROSS_FILE_DIFF_CHARS = parsePositiveInteger(
   process.env.MAX_CROSS_FILE_DIFF_CHARS ?? process.env.CROSS_FILE_DIFF_CHARS,
   1_500,
