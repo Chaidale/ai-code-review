@@ -1,4 +1,21 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ai_code_review
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ai_code_review"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
   server:
     build:
       context: .
@@ -7,6 +24,11 @@ services:
       - "3001:3001"
     env_file:
       - ./server/.env
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ai_code_review
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
 
   client:
@@ -16,3 +38,6 @@ services:
     depends_on:
       - server
     restart: unless-stopped
+
+volumes:
+  postgres-data:

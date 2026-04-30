@@ -43,6 +43,28 @@ function parseOptionalString(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function parseBoolean(value, fallback = false) {
+  if (value == null || value === "") {
+    return fallback;
+  }
+
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  const normalizedValue = String(value).trim().toLowerCase();
+
+  if (["true", "1", "yes", "on"].includes(normalizedValue)) {
+    return true;
+  }
+
+  if (["false", "0", "no", "off"].includes(normalizedValue)) {
+    return false;
+  }
+
+  throw new Error("布尔值配置只能是 true/false、1/0、yes/no、on/off");
+}
+
 function parseUnitIntervalNumber(value, fallback, name) {
   if (value == null || value === "") {
     return fallback;
@@ -86,6 +108,23 @@ export const MAX_CROSS_FILE_DIFF_CHARS = parsePositiveInteger(
   "MAX_CROSS_FILE_DIFF_CHARS",
 );
 export const REVIEW_CACHE_TTL_MS = parsePositiveInteger(process.env.REVIEW_CACHE_TTL_MS, 300_000, "REVIEW_CACHE_TTL_MS");
+export const ANALYSIS_HISTORY_LIMIT = parsePositiveInteger(
+  process.env.ANALYSIS_HISTORY_LIMIT,
+  50,
+  "ANALYSIS_HISTORY_LIMIT",
+);
+export const DATABASE_URL = parseNonEmptyString(
+  process.env.DATABASE_URL,
+  "postgresql://postgres:postgres@localhost:5432/ai_code_review",
+  "DATABASE_URL",
+);
+export const DATABASE_MAX_CONNECTIONS = parsePositiveInteger(
+  process.env.DATABASE_MAX_CONNECTIONS,
+  10,
+  "DATABASE_MAX_CONNECTIONS",
+);
+export const DATABASE_SSL = parseBoolean(process.env.DATABASE_SSL, false);
+export const ANALYSIS_STORE_FILE = parseOptionalString(process.env.ANALYSIS_STORE_FILE);
 export const DEFAULT_SENTRY_AUTH_TOKEN = parseOptionalString(process.env.SENTRY_AUTH_TOKEN);
 export const SENTRY_DSN = parseOptionalString(process.env.SENTRY_DSN);
 export const SENTRY_BROWSER_DSN = parseOptionalString(process.env.SENTRY_BROWSER_DSN) || SENTRY_DSN;

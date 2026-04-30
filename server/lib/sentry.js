@@ -3,9 +3,63 @@ import { createHttpError } from "./errors.js";
 
 const SENTRY_MAX_STACK_FRAMES = 6;
 const SENTRY_MAX_CONTEXT_LINES = 8;
+const ZERO_WIDTH_CHAR_RE = /[\u200B-\u200D\uFEFF]/g;
+const LEADING_URL_PUNCTUATION_RE = /^[([{<"'（【《「『]+/u;
+const TRAILING_URL_PUNCTUATION_RE = /[)\]}>,.;!?'"，。；！？、）】》」』]+$/u;
+const URL_WITH_PROTOCOL_RE = /^[a-z][a-z\d+.-]*:\/\//i;
+const URL_NEEDS_HTTPS_RE = /^(?:sentry\.io\/|[^/\s]+\.sentry\.io\/|localhost:\d+\/issues\/)/i;
+const SENTRY_URL_CANDIDATE_PATTERNS = [
+  /https?:\/\/[^\s]+/i,
+  /(?:^|[\s(（[])([^/\s]+\.sentry\.io\/[^\s]+)/i,
+  /(?:^|[\s(（[])(sentry\.io\/[^\s]+)/i,
+];
 
 function normalizeTrimmedString(value) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function stripOuterUrlPunctuation(value) {
+  return value
+    .replace(LEADING_URL_PUNCTUATION_RE, "")
+    .replace(TRAILING_URL_PUNCTUATION_RE, "");
+}
+
+function extractSentryUrlCandidate(value) {
+  // 用户常把“整句说明 + URL”或“带中文括号的链接”一起粘进来，这里先尽量把真正的链接抽出来。
+  const normalizedValue = normalizeTrimmedString(value).replace(ZERO_WIDTH_CHAR_RE, "");
+
+  if (!normalizedValue) {
+    return "";
+  }
+
+  for (const pattern of SENTRY_URL_CANDIDATE_PATTERNS) {
+    const match = normalizedValue.match(pattern);
+    const candidate = match?.[1] ?? match?.[0];
+
+    if (candidate) {
+      return stripOuterUrlPunctuation(candidate);
+    }
+  }
+
+  return stripOuterUrlPunctuation(normalizedValue);
+}
+
+function normalizeSentryIssueUrlInput(value) {
+  const normalizedValue = extractSentryUrlCandidate(value);
+
+  if (!normalizedValue) {
+    return "";
+  }
+
+  if (URL_WITH_PROTOCOL_RE.test(normalizedValue)) {
+    return normalizedValue;
+  }
+
+  if (URL_NEEDS_HTTPS_RE.test(normalizedValue)) {
+    return `https://${normalizedValue}`;
+  }
+
+  return normalizedValue;
 }
 
 function isNonEmptyString(value) {
@@ -18,6 +72,18 @@ function parseIntegerString(value) {
 
 function escapePathSegment(value) {
   return encodeURIComponent(value);
+}
+
+function parseSentryOrganizationSlugFromHostname(hostname) {
+  const normalizedHostname = normalizeTrimmedString(hostname).toLowerCase();
+
+  if (!normalizedHostname.endsWith(".sentry.io")) {
+    return null;
+  }
+
+  const hostParts = normalizedHostname.split(".").filter(Boolean);
+
+  return hostParts.length === 3 ? hostParts[0] : null;
 }
 
 function buildSentryApiUrl({ origin, organizationSlug, issueId, eventId = null, environments = [] }) {
@@ -33,7 +99,11 @@ function buildSentryApiUrl({ origin, organizationSlug, issueId, eventId = null, 
   return url.toString();
 }
 
-function parseSentryIssuePath(pathParts) {
+function parseSentryIssuePath(pathParts, hostname = "") {
+  // 兼容三类常见页面链接：
+  // 1. /organizations/{org}/issues/{id}
+  // 2. /{org}/{project}/issues/{id}
+  // 3. https://{org}.sentry.io/issues/{id}
   const organizationsIndex = pathParts.indexOf("organizations");
 
   if (organizationsIndex >= 0) {
@@ -48,9 +118,11 @@ function parseSentryIssuePath(pathParts) {
 
   const issuesIndex = pathParts.indexOf("issues");
 
-  if (issuesIndex >= 2) {
-    const organizationSlug = pathParts[issuesIndex - 2] ?? "";
+  if (issuesIndex >= 0) {
     const issueId = parseIntegerString(pathParts[issuesIndex + 1] ?? "");
+    const organizationSlug = issuesIndex >= 2
+      ? pathParts[issuesIndex - 2] ?? ""
+      : parseSentryOrganizationSlugFromHostname(hostname);
 
     if (organizationSlug && issueId) {
       return { organizationSlug, issueId };
@@ -61,7 +133,7 @@ function parseSentryIssuePath(pathParts) {
 }
 
 export function parseSentryIssueUrl(issueUrl) {
-  const normalizedIssueUrl = normalizeTrimmedString(issueUrl);
+  const normalizedIssueUrl = normalizeSentryIssueUrlInput(issueUrl);
 
   if (!normalizedIssueUrl) {
     return null;
@@ -69,7 +141,7 @@ export function parseSentryIssueUrl(issueUrl) {
 
   try {
     const url = new URL(normalizedIssueUrl);
-    const parsedPath = parseSentryIssuePath(url.pathname.split("/").filter(Boolean));
+    const parsedPath = parseSentryIssuePath(url.pathname.split("/").filter(Boolean), url.hostname);
 
     if (!parsedPath) {
       return null;
@@ -377,7 +449,17 @@ export async function fetchSentryIssueSummary({ issueUrl, authToken }) {
   const sentryIssueInfo = parseSentryIssueUrl(issueUrl);
 
   if (!sentryIssueInfo) {
+    const normalizedIssueUrl = normalizeSentryIssueUrlInput(issueUrl);
+
+    // 这里把服务端实际识别到的值打出来，方便区分“输入框里粘贴的内容”和“服务端真正解析到的内容”。
+    console.warn("[sentry] invalid issue URL received", {
+      rawIssueUrl: issueUrl,
+      normalizedIssueUrl,
+    });
     throw createHttpError(400, "Sentry Issue URL 格式不正确，请粘贴完整的 Issue 链接", {
+      details: {
+        normalizedIssueUrl,
+      },
       exposeError: false,
     });
   }

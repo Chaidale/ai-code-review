@@ -1,5 +1,6 @@
 import {
   MAX_CODE_REVIEW_CHARS,
+  ANALYSIS_HISTORY_LIMIT,
   MAX_MONITORING_SUMMARY_CHARS,
   MAX_FILE_DIFF_CHARS,
   MAX_CROSS_FILE_DIFF_CHARS,
@@ -13,6 +14,13 @@ import {
   DEFAULT_SENTRY_AUTH_TOKEN,
 } from "../config.js";
 import { askAI } from "../lib/ai.js";
+import { buildMonitoringStructuredResult } from "../lib/analysis-results.js";
+import {
+  createAnalysisRecord,
+  getAnalysisRecordById,
+  listAnalysisRecords,
+} from "../lib/analysis-store.js";
+import { resolveProjectForPullRequest } from "../modules/projects/service.js";
 import {
   fetchPullRequestDiff,
   parseGitHubPrUrl,
@@ -60,6 +68,37 @@ function appendMonitoringNoteBlock(title, content) {
   }
 
   return `${title}\n${normalizedContent}`;
+}
+
+function extractPlainTextPreview(value, maxLength = 180) {
+  const normalizedValue = normalizeTrimmedString(value).replace(/\s+/g, " ");
+
+  if (normalizedValue.length <= maxLength) {
+    return normalizedValue;
+  }
+
+  return `${normalizedValue.slice(0, maxLength)}...`;
+}
+
+function buildPullRequestReference(prInfo, prUrl) {
+  return {
+    owner: prInfo.owner,
+    repo: prInfo.repo,
+    prNumber: prInfo.prNumber,
+    url: prUrl,
+  };
+}
+
+function buildPullRequestAnalysisTitle(prInfo, suffix) {
+  return `${prInfo.owner}/${prInfo.repo}#${prInfo.prNumber} · ${suffix}`;
+}
+
+function buildDiffSnapshot(files) {
+  return Array.isArray(files)
+    ? files
+      .map((file) => `### ${file.fileName}\n${file.diff}`)
+      .join("\n\n")
+    : "";
 }
 
 const reviewCache = new Map();
@@ -338,6 +377,7 @@ export async function reviewCode({ code = "", framework = "Vue", deepseekApiKey 
 }
 
 export async function reviewPullRequest({
+  projectId = "",
   prUrl = "",
   deepseekApiKey = "",
   githubToken = "",
@@ -352,6 +392,7 @@ export async function reviewPullRequest({
   }
 
   const {
+    normalizedPrUrl,
     normalizedDeepseekApiKey,
     normalizedGithubToken,
     prInfo,
@@ -364,6 +405,10 @@ export async function reviewPullRequest({
     prUrl,
     deepseekApiKey,
     githubToken,
+  });
+  const project = await resolveProjectForPullRequest({
+    projectId,
+    prInfo,
   });
   const aiCredentials = { apiKey: normalizedDeepseekApiKey };
 
@@ -414,7 +459,7 @@ export async function reviewPullRequest({
     }
   }
 
-  return buildPullRequestResult({
+  const response = buildPullRequestResult({
     prInfo,
     totalFileCount,
     skippedBinaryFiles,
@@ -426,9 +471,47 @@ export async function reviewPullRequest({
     githubReviewPublished,
     githubReviewPublishError,
   });
+  const record = await createAnalysisRecord({
+    projectId: project.id,
+    type: "pr-review",
+    title: buildPullRequestAnalysisTitle(prInfo, "PR Review"),
+    pr: buildPullRequestReference(prInfo, normalizedPrUrl),
+    triggerSource: "manual",
+    source: {
+      githubReviewPublished,
+      publishReviewComment: shouldPublishReviewComment,
+    },
+    summary: extractPlainTextPreview(reviewResult),
+    resultMarkdown: response.result,
+    metadata: {
+      totalFileCount,
+      analyzedFileCount: files.length,
+      skippedBinaryFiles,
+      omittedTextFileCount,
+      truncatedFileCount,
+    },
+    inputs: {
+      prUrl: normalizedPrUrl,
+      diffSnapshot: buildDiffSnapshot(files),
+      files,
+    },
+    output: {
+      reviewResult,
+      githubReviewComment,
+      githubReviewPublished,
+      githubReviewPublishError,
+    },
+  });
+
+  return {
+    ...response,
+    analysisId: record.id,
+    projectId: project.id,
+  };
 }
 
 export async function reviewPullRequestMonitoring({
+  projectId = "",
   prUrl = "",
   deepseekApiKey = "",
   githubToken = "",
@@ -447,6 +530,7 @@ export async function reviewPullRequestMonitoring({
   }
 
   const {
+    normalizedPrUrl,
     normalizedDeepseekApiKey,
     prInfo,
     files,
@@ -458,6 +542,10 @@ export async function reviewPullRequestMonitoring({
     prUrl,
     deepseekApiKey,
     githubToken,
+  });
+  const project = await resolveProjectForPullRequest({
+    projectId,
+    prInfo,
   });
   const {
     combinedSentryIssueSummary,
@@ -496,8 +584,8 @@ export async function reviewPullRequestMonitoring({
     apiKey: normalizedDeepseekApiKey,
     maxTokens: PR_MONITORING_REVIEW_MAX_TOKENS,
   }));
-
-  return buildPullRequestMonitoringResult({
+  const structuredResult = buildMonitoringStructuredResult(analysisResult);
+  const response = buildPullRequestMonitoringResult({
     prInfo,
     totalFileCount,
     skippedBinaryFiles,
@@ -511,4 +599,80 @@ export async function reviewPullRequestMonitoring({
     sentryIssueFetchWarning,
     analysisResult,
   });
+  const record = await createAnalysisRecord({
+    projectId: project.id,
+    type: "pr-monitoring",
+    title: buildPullRequestAnalysisTitle(prInfo, "PR + 监控分析"),
+    pr: buildPullRequestReference(prInfo, normalizedPrUrl),
+    triggerSource: "manual",
+    source: {
+      hasSentryIssueUrl: Boolean(normalizedSentryIssueUrl),
+      hasSentryIssueSummary: Boolean(truncatedSentryIssueSummary),
+      hasPerformanceSummary: Boolean(truncatedPerformanceSummary),
+      sentryIssueFetched,
+      sentryIssueFetchWarning,
+    },
+    summary: structuredResult.summary || extractPlainTextPreview(analysisResult),
+    resultMarkdown: response.result,
+    structuredResult,
+    metadata: {
+      totalFileCount,
+      analyzedFileCount: files.length,
+      skippedBinaryFiles,
+      omittedTextFileCount,
+      truncatedFileCount,
+    },
+    inputs: {
+      prUrl: normalizedPrUrl,
+      diffSnapshot: buildDiffSnapshot(files),
+      files,
+      sentryIssueUrl: normalizedSentryIssueUrl,
+      sentryIssueSummary: truncatedSentryIssueSummary,
+      performanceSummary: truncatedPerformanceSummary,
+    },
+    output: {
+      analysisResult,
+      sentryIssueFetched,
+      sentryIssueFetchWarning,
+    },
+  });
+
+  return {
+    ...response,
+    analysisId: record.id,
+    projectId: project.id,
+    structuredResult,
+  };
+}
+
+export async function listStoredAnalyses({
+  limit = 10,
+  type = "",
+  projectId = "",
+} = {}) {
+  const normalizedLimit = Number.isInteger(limit)
+    ? limit
+    : Math.max(parseInt(limit, 10) || 10, 1);
+
+  return {
+    items: await listAnalysisRecords({
+      limit: Math.min(normalizedLimit, ANALYSIS_HISTORY_LIMIT),
+      type,
+      projectId,
+    }),
+  };
+}
+
+export async function getStoredAnalysisDetail(analysisId = "") {
+  const record = await getAnalysisRecordById(analysisId);
+
+  if (!record) {
+    throw createHttpError(404, "未找到对应的分析记录", {
+      exposeError: false,
+    });
+  }
+
+  return {
+    analysis: record,
+  };
 }
