@@ -11,7 +11,9 @@
       <div class="credentials">
         <h3>调用凭证</h3>
         <p class="credentials-desc">
-          <code>DEEPSEEK_API_KEY</code> 为必填，<code>GITHUB_TOKEN</code> 可选，仅在需要更高 GitHub 权限或访问频率时填写。
+          <code>DEEPSEEK_API_KEY</code> 为必填；<code>GITHUB_TOKEN</code> 可选；如需通过
+          <code>Sentry Issue URL</code> 自动抓取错误详情，请提供 <code>SENTRY_AUTH_TOKEN</code>
+          或在后端环境变量中配置它。
         </p>
 
         <div class="credentials-inputs">
@@ -29,6 +31,15 @@
             type="password"
             show-password
             placeholder="请输入 GITHUB_TOKEN（选填）"
+            clearable
+            autocomplete="off"
+          />
+
+          <el-input
+            v-model="sentryAuthToken"
+            type="password"
+            show-password
+            placeholder="请输入 SENTRY_AUTH_TOKEN（选填，用于自动抓取 Sentry Issue）"
             clearable
             autocomplete="off"
           />
@@ -102,8 +113,8 @@
         <el-tab-pane label="PR + 监控分析" name="monitoring">
           <div class="tab-panel">
             <p class="form-note">
-              把 PR diff 与错误/性能摘要一起交给 AI，判断是否可能引发线上错误或性能回归。当前版本不会自动抓取
-              Sentry 链接，请粘贴摘要正文。
+              把 PR diff 与错误/性能摘要一起交给 AI，判断是否可能引发线上错误或性能回归。支持直接粘贴
+              Sentry Issue URL 自动抓取 issue 与最新事件摘要；手工错误摘要仍可作为补充说明一起提交。
             </p>
 
             <el-input
@@ -113,10 +124,16 @@
             />
 
             <el-input
+              v-model="sentryIssueUrl"
+              placeholder="可选：请输入 Sentry Issue URL，例如：https://sentry.io/organizations/your-org/issues/1234567890/"
+              clearable
+            />
+
+            <el-input
               v-model="sentryIssueSummary"
               type="textarea"
               :rows="7"
-              placeholder="请输入 Sentry Issue / 错误摘要，例如：报错标题、堆栈、影响范围、最近发布版本、出现时间段..."
+              placeholder="可选：补充手工错误摘要，例如：报错标题、影响范围、最近发布版本、出现时间段、你怀疑的触发路径..."
             />
 
             <el-input
@@ -166,6 +183,7 @@ const activeTab = ref("code");
 const framework = ref("Vue");
 const code = ref("");
 const prUrl = ref("");
+const sentryIssueUrl = ref("");
 const sentryIssueSummary = ref("");
 const performanceSummary = ref("");
 const result = ref("");
@@ -176,6 +194,7 @@ const prCommentLoading = ref(false);
 const prMonitoringLoading = ref(false);
 const deepseekApiKey = ref("");
 const githubToken = ref("");
+const sentryAuthToken = ref("");
 
 const htmlResult = computed(() => md.render(result.value));
 
@@ -198,11 +217,15 @@ const ensurePrUrl = () => {
 };
 
 const ensureMonitoringContext = () => {
-  if (sentryIssueSummary.value.trim() || performanceSummary.value.trim()) {
+  if (
+    sentryIssueUrl.value.trim() ||
+    sentryIssueSummary.value.trim() ||
+    performanceSummary.value.trim()
+  ) {
     return true;
   }
 
-  ElMessage.warning("请至少输入错误摘要或性能指标摘要");
+  ElMessage.warning("请至少输入 Sentry Issue URL、错误摘要或性能指标摘要");
   return false;
 };
 
@@ -309,8 +332,10 @@ const analyzePullRequestMonitoring = async () => {
       prUrl: prUrl.value.trim(),
       deepseekApiKey: deepseekApiKey.value.trim(),
       githubToken: githubToken.value.trim(),
+      sentryIssueUrl: sentryIssueUrl.value.trim(),
       sentryIssueSummary: sentryIssueSummary.value.trim(),
       performanceSummary: performanceSummary.value.trim(),
+      sentryAuthToken: sentryAuthToken.value.trim(),
     });
 
     result.value = res.data.result;
@@ -318,7 +343,7 @@ const analyzePullRequestMonitoring = async () => {
     result.value =
       err.response?.data?.error ||
       err.response?.data?.message ||
-      "监控分析失败，请检查 PR 链接、摘要内容、GitHub 权限或后端服务。";
+      "监控分析失败，请检查 PR 链接、Sentry 链接/权限、摘要内容或后端服务。";
   } finally {
     prMonitoringLoading.value = false;
   }

@@ -10,6 +10,7 @@ import {
   PR_REVIEW_MAX_TOKENS,
   GITHUB_COMMENT_MAX_TOKENS,
   REVIEW_CACHE_TTL_MS,
+  DEFAULT_SENTRY_AUTH_TOKEN,
 } from "../config.js";
 import { askAI } from "../lib/ai.js";
 import {
@@ -25,6 +26,7 @@ import {
   buildPullRequestMonitoringPrompt,
   buildPullRequestReviewPrompt,
 } from "../lib/prompts.js";
+import { fetchSentryIssueSummary } from "../lib/sentry.js";
 
 function normalizeTrimmedString(value) {
   return typeof value === "string" ? value.trim() : "";
@@ -48,6 +50,16 @@ function truncateText(text, maxChars, suffix) {
   }
 
   return `${text.slice(0, maxChars)}\n\n${suffix}`;
+}
+
+function appendMonitoringNoteBlock(title, content) {
+  const normalizedContent = normalizeTrimmedString(content);
+
+  if (!normalizedContent) {
+    return "";
+  }
+
+  return `${title}\n${normalizedContent}`;
 }
 
 const reviewCache = new Map();
@@ -135,10 +147,14 @@ function buildPullRequestMonitoringResult({
   omittedTextFileCount,
   truncatedFileCount,
   analyzedFileCount,
+  sentryIssueUrl,
   sentryIssueSummary,
   performanceSummary,
+  sentryIssueFetched,
+  sentryIssueFetchWarning,
   analysisResult,
 }) {
+  const hasSentryIssueUrl = Boolean(sentryIssueUrl);
   const hasSentryIssueSummary = Boolean(sentryIssueSummary);
   const hasPerformanceSummary = Boolean(performanceSummary);
   const sections = [
@@ -148,11 +164,17 @@ function buildPullRequestMonitoringResult({
     "",
     `本次 PR 共修改 **${totalFileCount}** 个文件，本次分析了 **${analyzedFileCount}** 个文本文件。`,
     "",
+    `Sentry Issue URL：**${hasSentryIssueUrl ? "已提供" : "未提供"}**`,
+    "",
     `错误摘要：**${hasSentryIssueSummary ? "已提供" : "未提供"}**`,
     "",
     `性能摘要：**${hasPerformanceSummary ? "已提供" : "未提供"}**`,
     "",
   ];
+
+  if (hasSentryIssueUrl) {
+    sections.push(`Sentry 自动抓取：**${sentryIssueFetched ? "成功" : "未执行"}**`, "");
+  }
 
   if (skippedBinaryFiles > 0) {
     sections.push(`> 已跳过 ${skippedBinaryFiles} 个二进制文件。`, "");
@@ -166,6 +188,10 @@ function buildPullRequestMonitoringResult({
     sections.push(`> 有 ${truncatedFileCount} 个文件的 diff 已按行截断，结论可能不如完整 diff 准确。`, "");
   }
 
+  if (sentryIssueFetchWarning) {
+    sections.push(`> Sentry latest event 抓取警告：${sentryIssueFetchWarning}`, "");
+  }
+
   sections.push("---", "");
   sections.push(analysisResult, "");
 
@@ -176,6 +202,50 @@ function buildPullRequestMonitoringResult({
     skippedBinaryFileCount: skippedBinaryFiles,
     hasSentryIssueSummary,
     hasPerformanceSummary,
+  };
+}
+
+async function resolveSentryIssueSummary({
+  sentryIssueUrl = "",
+  sentryIssueSummary = "",
+  sentryAuthToken = "",
+} = {}) {
+  const normalizedSentryIssueUrl = normalizeTrimmedString(sentryIssueUrl);
+  const normalizedSentryIssueSummary = normalizeTrimmedString(sentryIssueSummary);
+
+  if (!normalizedSentryIssueUrl) {
+    return {
+      combinedSentryIssueSummary: normalizedSentryIssueSummary,
+      sentryIssueFetched: false,
+      sentryIssueFetchWarning: null,
+    };
+  }
+
+  const normalizedSentryAuthToken = normalizeTrimmedString(sentryAuthToken) || DEFAULT_SENTRY_AUTH_TOKEN;
+
+  if (!normalizedSentryAuthToken) {
+    throw createHttpError(400, "使用 Sentry Issue URL 自动抓取时必须提供 SENTRY_AUTH_TOKEN", {
+      exposeError: false,
+    });
+  }
+
+  const sentryCacheKey = JSON.stringify({
+    type: "sentry-issue-summary",
+    sentryIssueUrl: normalizedSentryIssueUrl,
+  });
+  const sentryIssueResult = await getOrCreateCachedResult(sentryCacheKey, () => fetchSentryIssueSummary({
+    issueUrl: normalizedSentryIssueUrl,
+    authToken: normalizedSentryAuthToken,
+  }));
+  const combinedSentryIssueSummary = [
+    sentryIssueResult.summary,
+    appendMonitoringNoteBlock("手工补充说明：", normalizedSentryIssueSummary),
+  ].filter(Boolean).join("\n\n");
+
+  return {
+    combinedSentryIssueSummary,
+    sentryIssueFetched: true,
+    sentryIssueFetchWarning: sentryIssueResult.latestEventFetchError,
   };
 }
 
@@ -362,14 +432,16 @@ export async function reviewPullRequestMonitoring({
   prUrl = "",
   deepseekApiKey = "",
   githubToken = "",
+  sentryIssueUrl = "",
   sentryIssueSummary = "",
   performanceSummary = "",
+  sentryAuthToken = "",
 } = {}) {
-  const normalizedSentryIssueSummary = normalizeTrimmedString(sentryIssueSummary);
   const normalizedPerformanceSummary = normalizeTrimmedString(performanceSummary);
+  const normalizedSentryIssueUrl = normalizeTrimmedString(sentryIssueUrl);
 
-  if (!normalizedSentryIssueSummary && !normalizedPerformanceSummary) {
-    throw createHttpError(400, "请至少提供 Sentry Issue / 错误摘要 或 性能指标摘要", {
+  if (!normalizedSentryIssueUrl && !normalizeTrimmedString(sentryIssueSummary) && !normalizedPerformanceSummary) {
+    throw createHttpError(400, "请至少提供 Sentry Issue URL、Sentry Issue / 错误摘要 或 性能指标摘要", {
       exposeError: false,
     });
   }
@@ -387,8 +459,17 @@ export async function reviewPullRequestMonitoring({
     deepseekApiKey,
     githubToken,
   });
+  const {
+    combinedSentryIssueSummary,
+    sentryIssueFetched,
+    sentryIssueFetchWarning,
+  } = await resolveSentryIssueSummary({
+    sentryIssueUrl: normalizedSentryIssueUrl,
+    sentryIssueSummary,
+    sentryAuthToken,
+  });
   const truncatedSentryIssueSummary = truncateText(
-    normalizedSentryIssueSummary,
+    combinedSentryIssueSummary,
     MAX_MONITORING_SUMMARY_CHARS,
     "[错误摘要过长，已截断]",
   );
@@ -423,8 +504,11 @@ export async function reviewPullRequestMonitoring({
     omittedTextFileCount,
     truncatedFileCount,
     analyzedFileCount: files.length,
+    sentryIssueUrl: normalizedSentryIssueUrl,
     sentryIssueSummary: truncatedSentryIssueSummary,
     performanceSummary: truncatedPerformanceSummary,
+    sentryIssueFetched,
+    sentryIssueFetchWarning,
     analysisResult,
   });
 }

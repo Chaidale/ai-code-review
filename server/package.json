@@ -4,10 +4,11 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "dev": "nodemon index.js",
-    "start": "node index.js"
+    "dev": "nodemon --exec \"node --import ./start.js\" index.js",
+    "start": "node --import ./start.js index.js"
   },
   "dependencies": {
+    "@sentry/node": "^10.50.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
