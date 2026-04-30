@@ -3,5 +3,17 @@ import App from "./App.vue";
 
 import ElementPlus from "element-plus";
 import "element-plus/dist/index.css";
+import { initBrowserSentry, loadPublicRuntimeConfig } from "./lib/sentry.js";
 
-createApp(App).use(ElementPlus).mount("#app");
+async function bootstrap() {
+  const app = createApp(App);
+
+  app.use(ElementPlus);
+
+  const publicConfig = await loadPublicRuntimeConfig();
+  initBrowserSentry(app, publicConfig?.sentry);
+
+  app.mount("#app");
+}
+
+bootstrap();
